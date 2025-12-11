@@ -3,58 +3,60 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../common/prisma.service';
+import { WalletRepository } from './wallet.repository';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from 'src/common/prisma.service';
 
 @Injectable()
 export class WalletService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly walletRepo: WalletRepository, private prisma: PrismaService) {}
 
   async getBalance(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { balance: true },
-    });
-    return { balance: user?.balance ?? 0 };
+    const balance = await this.walletRepo.getUserBalance(userId);
+    return { balance: balance.toNumber() };
   }
 
   async transfer(fromId: string, toId: string, amount: number) {
-    if (amount <= 0) throw new BadRequestException('Amount must be positive');
-    if (fromId === toId) throw new BadRequestException('Cannot send to self');
+    if (amount <= 0) {
+      throw new BadRequestException('Amount must be positive');
+    }
+    if (fromId === toId) {
+      throw new BadRequestException('Cannot send money to yourself');
+    }
 
-    return this.prisma.$transaction(async (tx) => {
-      const sender = await tx.user.findUnique({
-        where: { id: fromId },
-        select: { id: true, balance: true },
-      });
+    const amountDecimal = new Prisma.Decimal(amount);
 
+      return this.prisma.$transaction(async (tx) => {
+      const sender = await this.walletRepo.findUserByIdSelectBalance(fromId);
+      if (!sender) {
+        throw new NotFoundException('Sender not found');
+      }
 
-      if (
-        !sender ||
-        Number(sender.balance) < amount
-      ) {
+      if (sender.balance.lt(amountDecimal)) {
         throw new BadRequestException('Insufficient funds');
       }
 
-      const receiver = await tx.user.findUnique({ where: { id: toId } });
-      if (!receiver) throw new NotFoundException('Recipient not found');
+      const receiverExists = await this.walletRepo.userExists(toId);
+      if (!receiverExists) {
+        throw new NotFoundException('Recipient not found');
+      }
 
-      await tx.$executeRaw`SELECT balance FROM "users" WHERE id = ${fromId} FOR UPDATE`;
+      await this.walletRepo.lockUserBalanceForUpdate(tx, fromId);
 
-      await tx.user.update({
-        where: { id: fromId },
-        data: { balance: { decrement: amount } },
+      await this.walletRepo.debitUser(tx, fromId, amountDecimal);
+      await this.walletRepo.creditUser(tx, toId, amountDecimal);
+
+      await this.walletRepo.createTransaction(tx, {
+        amount,
+        senderId: fromId,
+        receiverId: toId,
       });
 
-      await tx.user.update({
-        where: { id: toId },
-        data: { balance: { increment: amount } },
-      });
-
-      await tx.transaction.create({
-        data: { amount, senderId: fromId, receiverId: toId },
-      });
-
-      return { message: 'Transfer successful', amount };
+      return {
+        message: 'Transfer successful',
+        amount,
+        newBalance: (sender.balance.toNumber() - amount).toFixed(2),
+      };
     });
   }
 }

@@ -4,7 +4,6 @@ import { WalletModule } from './wallet/wallet.module';
 import { PrismaService } from './common/prisma.service';
 import { TransactionsModule } from './transactions/transactions.module';
 
-
 @Module({
   imports: [AuthModule, WalletModule, TransactionsModule],
   providers: [PrismaService],

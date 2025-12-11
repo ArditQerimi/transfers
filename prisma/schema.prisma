@@ -1,11 +1,9 @@
 generator client {
   provider = "prisma-client-js"
-
 }
 
 datasource db {
   provider = "postgresql"
-  
 }
 
 model User {
@@ -13,11 +11,11 @@ model User {
   email     String   @unique
   password  String
   balance   Decimal  @default(100.00)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  sentTransactionsSent Transaction[] @relation("Sender")
-  transactionsReceived Transaction[] @relation("Receiver")
+  sentTransactions     Transaction[] @relation("Sender")
+  receivedTransactions Transaction[] @relation("Receiver")
 
   @@map("users")
 }
