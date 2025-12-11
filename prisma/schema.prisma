@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+
+}
+
+datasource db {
+  provider = "postgresql"
+  
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  balance   Decimal  @default(100.00)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sentTransactionsSent Transaction[] @relation("Sender")
+  transactionsReceived Transaction[] @relation("Receiver")
+
+  @@map("users")
+}
+
+model Transaction {
+  id         String   @id @default(cuid())
+  amount     Decimal
+  senderId   String
+  receiverId String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  sender   User @relation("Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("transactions")
+}
